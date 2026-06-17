@@ -1,0 +1,86 @@
+# =========================
+# JAVA / SPRING BOOT
+# =========================
+target/
+build/
+.gradle/
+
+*.class
+*.jar
+*.war
+*.ear
+
+# Logs
+logs/
+*.log
+
+# Maven Wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# =========================
+# APPLICATION CONFIG
+# =========================
+application-local.properties
+application-local.yml
+application-local.yaml
+
+.env
+.env.*
+
+# =========================
+# IDEs
+# =========================
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Eclipse
+.project
+.classpath
+.settings/
+
+# VS Code
+.vscode/
+
+# =========================
+# OS FILES
+# =========================
+
+.DS_Store
+Thumbs.db
+
+# =========================
+# NODE / REACT
+# =========================
+
+node_modules/
+
+dist/
+coverage/
+
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# =========================
+# TESTS
+# =========================
+
+test-output/
+surefire-reports/
+
+# =========================
+# DOCKER
+# =========================
+
+*.pid
+docker-data/
+
+# =========================
+# TEMP FILES
+# =========================
+
+tmp/
+temp/
+*.tmp
