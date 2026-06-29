@@ -6,6 +6,7 @@
   min-height: 100vh;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 20px;
+  box-sizing: border-box;
 }
 
 /* Tarjeta de autenticación */
@@ -16,6 +17,7 @@
   max-width: 450px;
   width: 100%;
   padding: 40px;
+  box-sizing: border-box;
   animation: slideIn 0.3s ease-out;
 }
 
@@ -71,6 +73,7 @@
   color: #2d3748;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  text-align: left;
 }
 
 /* Inputs y Selects */
@@ -84,6 +87,8 @@
   transition: all 0.3s ease;
   background-color: #f7fafc;
   color: #2d3748;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .form-group input:focus,
@@ -136,7 +141,7 @@
   border-radius: 8px;
   font-size: 13px;
   border-left: 4px solid #c53030;
-  animation: fadeIn 0.3s ease-out;
+  text-align: left;
 }
 
 .auth-success {
@@ -146,18 +151,7 @@
   border-radius: 8px;
   font-size: 13px;
   border-left: 4px solid #38a169;
-  animation: fadeIn 0.3s ease-out;
-}
-
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(-10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  text-align: left;
 }
 
 /* Footer de autenticación */
@@ -174,7 +168,6 @@
   margin: 0;
 }
 
-/* Link button (botón como link) */
 .link-button {
   background: none;
   border: none;
@@ -193,17 +186,11 @@
   text-decoration: underline;
 }
 
-/* Responsive */
 @media (max-width: 480px) {
   .auth-card {
     padding: 30px 20px;
   }
-
   .auth-header h1 {
     font-size: 24px;
-  }
-
-  .form-group {
-    gap: 6px;
   }
 }

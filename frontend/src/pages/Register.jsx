@@ -25,11 +25,17 @@ function Register() {
     setError('');
     setSuccess('');
 
+    // Sincronización de rol: Mapeamos 'administrador' a 'admin' para cumplir con FastAPI y PostgreSQL
+    const payloadEnvio = {
+      ...form,
+      rol: form.rol === 'administrador' ? 'admin' : form.rol
+    };
+
     try {
       const res = await fetch('http://localhost:8000/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payloadEnvio), // Enviamos el payload corregido
       });
 
       const data = await res.json();
