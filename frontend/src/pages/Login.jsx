@@ -35,7 +35,10 @@ function Login() {
         localStorage.setItem('token', data.access_token);
         const decoded = jwtDecode(data.access_token);
 
-        if (decoded.rol === 'administrador') {
+        console.log("LOGIN SUCCESS - DECODED ROLE:", decoded.rol);
+
+        // Corregido: Evaluamos contra 'admin' para coincidir con la base de datos
+        if (decoded.rol === 'admin') {
           navigate('/admin');
         } else {
           navigate('/user');
