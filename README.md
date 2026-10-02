@@ -38,3 +38,24 @@ Infra:
 ## Estado
 
 Proyecto en etapa inicial de definición técnica.
+
+## Backend local
+
+En el directorio `backend` hay dos scripts útiles:
+
+- `start-backend.ps1`: instala dependencias y arranca el servidor FastAPI.
+- `test-register.ps1`: envía una prueba al endpoint `POST /auth/register`.
+
+Uso:
+
+```powershell
+cd backend
+./start-backend.ps1
+```
+
+En otra terminal:
+
+```powershell
+cd backend
+./test-register.ps1
+```
