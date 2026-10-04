@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
 # Importamos de manera ordenada todos los routers de la aplicación
-from .routers import auth, procesos, ofertas
+from .routers import auth, procesos, ofertas, postulantes
 
 app = FastAPI(
     title="GovTech Perú - Automatización de Contrataciones",
@@ -44,7 +44,7 @@ Base.metadata.create_all(bind=engine)
 # Configuración del Middleware CORS para comunicación con el Frontend (React)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,6 +54,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth")
 app.include_router(procesos.router)  # /procesos prefix configurado internamente
 app.include_router(ofertas.router)   # /ofertas prefix configurado internamente
+app.include_router(postulantes.router)
 
 @app.get("/")
 def root():

@@ -12,6 +12,12 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d govtech_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
 
   backend:
     build:
@@ -22,9 +28,14 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://user:password@db:5432/govtech_db
+      DATABASE_URL: postgresql://user:password@host.docker.internal:5432/govtech_db
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-govtech-local-development-secret-change-before-deploy-2026}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   postgres-data:

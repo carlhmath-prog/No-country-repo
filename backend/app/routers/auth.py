@@ -1,29 +1,20 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import jwt
-import hashlib
 from ..database import get_db
 from .. import models, schemas
-
-SECRET_KEY = "your-secret-key-here"
-ALGORITHM = "HS256"
+from ..security import JWT_ALGORITHM, JWT_SECRET_KEY, obtener_password_hash, requerir_rol, verificar_password
 
 router = APIRouter(
     tags=["Autenticación"]
 )
 
-def obtener_password_hash(password: str) -> str:
-    return hashlib.sha256(password.encode('utf-8')).hexdigest()
-
-def verificar_password(plain_password: str, hashed_password: str) -> bool:
-    return obtener_password_hash(plain_password) == hashed_password
-
 def crear_token_acceso(data: dict):
     to_encode = data.copy()
-    expire = datetime.utcnow() + timedelta(hours=2)
+    expire = datetime.now(timezone.utc) + timedelta(hours=2)
     to_encode.update({"exp": expire})
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     if isinstance(encoded_jwt, bytes):
         return encoded_jwt.decode('utf-8')
     return encoded_jwt
@@ -70,6 +61,14 @@ def login(login_request: schemas.LoginRequest, db: Session = Depends(get_db)):
             detail="El correo electrónico o la contraseña son incorrectos."
         )
 
+    if not user.password_hash.startswith("scrypt$"):
+        user.password_hash = obtener_password_hash(login_request.password)
+        db.commit()
+
+    if user.rol == "admin":
+        user.rol = "superadmin"
+        db.commit()
+
     payload = {
         "sub": user.email,
         "rol": user.rol
@@ -80,3 +79,33 @@ def login(login_request: schemas.LoginRequest, db: Session = Depends(get_db)):
         "access_token": token,
         "token_type": "bearer"
     }
+
+
+@router.get("/evaluadores", response_model=list[schemas.UsuarioResponse])
+def listar_evaluadores(
+    db: Session = Depends(get_db),
+    _: models.Usuario = Depends(requerir_rol("superadmin")),
+):
+    return db.query(models.Usuario).filter(models.Usuario.rol == "evaluador").order_by(models.Usuario.id).all()
+
+
+@router.post("/evaluadores", response_model=schemas.UsuarioResponse, status_code=status.HTTP_201_CREATED)
+def crear_evaluador(
+    evaluator: schemas.EvaluadorCreate,
+    db: Session = Depends(get_db),
+    _: models.Usuario = Depends(requerir_rol("superadmin")),
+):
+    existing_user = db.query(models.Usuario).filter(models.Usuario.email == evaluator.email).first()
+    if existing_user:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="El correo ya está registrado.")
+
+    user = models.Usuario(
+        nombre_completo=evaluator.nombre_completo,
+        email=evaluator.email,
+        password_hash=obtener_password_hash(evaluator.password),
+        rol="evaluador",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user

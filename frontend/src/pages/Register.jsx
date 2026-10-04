@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './Auth.css';
 
@@ -25,17 +25,11 @@ function Register() {
     setError('');
     setSuccess('');
 
-    // Sincronización de rol: Mapeamos 'administrador' a 'admin' para cumplir con FastAPI y PostgreSQL
-    const payloadEnvio = {
-      ...form,
-      rol: form.rol === 'administrador' ? 'admin' : form.rol
-    };
-
     try {
-      const res = await fetch('http://localhost:8000/auth/register', {
+      const res = await fetch('/api/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payloadEnvio), // Enviamos el payload corregido
+        body: JSON.stringify(form),
       });
 
       const data = await res.json();
@@ -46,7 +40,7 @@ function Register() {
       } else {
         setError(data.detail || 'Error al registrarse');
       }
-    } catch (err) {
+    } catch {
       setError('Error de conexión con el servidor');
     } finally {
       setLoading(false);
@@ -54,91 +48,84 @@ function Register() {
   };
 
   return (
-    <div className="auth-container">
-      <div className="auth-card">
-        <div className="auth-header">
-          <h1>Crear Cuenta</h1>
-          <p className="auth-subtitle">Regístrate para comenzar</p>
+    <div className="auth-shell">
+      <aside className="auth-aside">
+        <a className="auth-brand" href="/" aria-label="GovTech Perú, inicio">
+          <span className="auth-brand-mark" aria-hidden="true">G</span>
+          <span>GOVTECH<span className="auth-brand-caption">PERÚ · CONTRATACIÓN PÚBLICA</span></span>
+        </a>
+        <div className="auth-aside-copy">
+          <p className="auth-eyebrow">Registro público</p>
+          <h1>Postula a procesos con una sola cuenta.</h1>
+          <p>Completa tu perfil empresarial después de registrarte para presentar ofertas y consultar convocatorias.</p>
+          <div className="auth-role-summary" aria-label="Roles de la plataforma">
+            <span>Postulante</span><span>Evaluador</span><span>Superadmin</span>
+          </div>
         </div>
+        <div className="auth-aside-footer"><span>Registro gratuito</span><span>Identidad por roles</span></div>
+      </aside>
 
-        <form onSubmit={handleSubmit} className="auth-form">
-          {error && <div className="auth-error">{error}</div>}
-          {success && <div className="auth-success">{success}</div>}
+      <main className="auth-main">
+        <section className="auth-card" aria-labelledby="register-title">
+          <a className="auth-brand auth-mobile-brand" href="/" aria-label="GovTech Perú, inicio">
+            <span className="auth-brand-mark" aria-hidden="true">G</span>
+            <span>GOVTECH<span className="auth-brand-caption">PERÚ</span></span>
+          </a>
+          <header className="auth-header">
+            <p className="auth-eyebrow">Crear cuenta</p>
+            <h2 id="register-title">Registro de postulante</h2>
+            <p className="auth-subtitle">Los datos de empresa se completan en tu primer acceso.</p>
+          </header>
 
-          <div className="form-group">
-            <label htmlFor="nombre">Nombre Completo</label>
-            <input
-              id="nombre"
-              name="nombre_completo"
-              type="text"
-              placeholder="Juan Pérez"
-              value={form.nombre_completo}
-              onChange={handleChange}
-              required
-            />
-          </div>
+          <form onSubmit={handleSubmit} className="auth-form">
+            {error && <div className="auth-error" role="alert">{error}</div>}
+            {success && <div className="auth-success" role="status">{success}</div>}
 
-          <div className="form-group">
-            <label htmlFor="email">Correo Electrónico</label>
-            <input
-              id="email"
-              name="email"
-              type="email"
-              placeholder="tu@email.com"
-              value={form.email}
-              onChange={handleChange}
-              required
-            />
-          </div>
+            <fieldset className="role-fieldset">
+              <legend>Tipo de cuenta</legend>
+              <label className={`role-option ${form.rol === 'postulante' ? 'role-option-selected' : ''}`}>
+                <input type="radio" name="rol" value="postulante" checked={form.rol === 'postulante'} onChange={handleChange} />
+                <span className="role-option-copy"><strong>Postulante</strong><span>Registro público para participar en convocatorias.</span></span>
+                <span className="role-option-status">Abierto</span>
+              </label>
+              <div className="role-option role-option-restricted" aria-disabled="true">
+                <span className="role-option-copy"><strong>Evaluador</strong><span>Cuenta creada por el superadmin de la plataforma.</span></span>
+                <span className="role-option-status">Por invitación</span>
+              </div>
+              <div className="role-option role-option-restricted" aria-disabled="true">
+                <span className="role-option-copy"><strong>Superadmin</strong><span>Acceso de administración inicial y privado.</span></span>
+                <span className="role-option-status">Privado</span>
+              </div>
+            </fieldset>
 
-          <div className="form-group">
-            <label htmlFor="password">Contraseña</label>
-            <input
-              id="password"
-              name="password"
-              type="password"
-              placeholder="••••••••"
-              value={form.password}
-              onChange={handleChange}
-              required
-            />
-          </div>
+            <div className="form-group">
+              <label htmlFor="nombre_completo">Nombre completo</label>
+              <input id="nombre_completo" name="nombre_completo" type="text" autoComplete="name" maxLength="150" placeholder="Nombre y apellidos" value={form.nombre_completo} onChange={handleChange} required />
+            </div>
 
-          <div className="form-group">
-            <label htmlFor="rol">Tipo de Usuario</label>
-            <select 
-              id="rol"
-              name="rol" 
-              value={form.rol}
-              onChange={handleChange}
-            >
-              <option value="postulante">Postulante</option>
-              <option value="administrador">Administrador</option>
-            </select>
-          </div>
+            <div className="form-group">
+              <label htmlFor="email">Correo electrónico</label>
+              <input id="email" name="email" type="email" autoComplete="email" placeholder="nombre@empresa.pe" value={form.email} onChange={handleChange} required />
+            </div>
 
-          <button 
-            type="submit" 
-            className="auth-button"
-            disabled={loading}
-          >
-            {loading ? 'Registrando...' : 'Registrarse'}
-          </button>
-        </form>
+            <div className="form-group">
+              <label htmlFor="password">Contraseña</label>
+              <input id="password" name="password" type="password" autoComplete="new-password" minLength="8" placeholder="Mínimo 8 caracteres" value={form.password} onChange={handleChange} required />
+            </div>
 
-        <div className="auth-footer">
-          <p className="auth-link">
-            ¿Ya tienes cuenta? 
-            <button 
-              type="button"
-              className="link-button"
-              onClick={() => navigate('/login')}
-            >
-              Inicia sesión aquí
+            <button type="submit" className="auth-button" disabled={loading}>
+              {loading ? 'Creando cuenta…' : 'Crear cuenta de postulante'}
             </button>
-          </p>
-        </div>
-      </div>
+          </form>
+
+          <footer className="auth-footer">
+            <p className="auth-link">
+              ¿Ya tienes cuenta?
+              <button type="button" className="link-button" onClick={() => navigate('/login')}>Iniciar sesión</button>
+            </p>
+          </footer>
+        </section>
+      </main>
     </div>
   );
 }

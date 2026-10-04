@@ -3,13 +3,19 @@ from sqlalchemy.orm import Session
 from typing import List
 from ..database import get_db
 from .. import models, schemas
+from ..security import requerir_rol
 
 router = APIRouter(
     prefix="/procesos",
     tags=["Procesos de Selección"]
 )
 
-@router.post("/", response_model=schemas.ProcesoSeleccionResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/",
+    response_model=schemas.ProcesoSeleccionResponse,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(requerir_rol("evaluador"))],
+)
 def crear_proceso(proceso: schemas.ProcesoSeleccionCreate, db: Session = Depends(get_db)):
     # Lógica de validación
     db_proceso = db.query(models.ProcesoSeleccion).filter(models.ProcesoSeleccion.codigo == proceso.codigo).first()

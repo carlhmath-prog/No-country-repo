@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { procesosService, ofertasService } from '../services/procesosService';
+import { procesosService, ofertasService, postulantesService } from '../services/procesosService';
 
 export default function UserDashboard() {
   const navigate = useNavigate();
@@ -8,6 +8,9 @@ export default function UserDashboard() {
   const [procesoSeleccionado, setProcesoSeleccionado] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [perfilPostulante, setPerfilPostulante] = useState(null);
+  const [perfilCargado, setPerfilCargado] = useState(false);
+  const [perfilForm, setPerfilForm] = useState({ razon_social: '', ruc: '' });
 
   const [rutaTecnica, setRutaTecnica] = useState('');
   const [rutaEconomica, setRutaEconomica] = useState('');
@@ -16,23 +19,62 @@ export default function UserDashboard() {
   const [cargoEspecialista, setCargoEspecialista] = useState('');
   const [experienciaEspecialista, setExperienciaEspecialista] = useState('');
 
-  useEffect(() => {
-    cargarConvocatorias();
-  }, []);
+  const cargarConvocatorias = useCallback(
+    () => procesosService.listarProcesos(),
+    []
+  );
 
-  const cargarConvocatorias = async () => {
-    try {
-      const data = await procesosService.listarProcesos();
-      setProcesos(data);
-    } catch (err) {
-      setError('Error al obtener los procesos vigentes del servidor.');
-    }
-  };
+  useEffect(() => {
+    let isActive = true;
+    cargarConvocatorias()
+      .then((data) => {
+        if (isActive) setProcesos(data);
+      })
+      .catch(() => {
+        if (isActive) setError('Error al obtener los procesos vigentes del servidor.');
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [cargarConvocatorias]);
+
+  useEffect(() => {
+    let isActive = true;
+    postulantesService.obtenerMiPerfil()
+      .then((perfil) => {
+        if (isActive) setPerfilPostulante(perfil);
+      })
+      .catch((requestError) => {
+        if (isActive) {
+          setError(requestError.response?.data?.detail || 'No se pudo cargar el perfil.');
+        }
+      })
+      .finally(() => {
+        if (isActive) setPerfilCargado(true);
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
     localStorage.removeItem('token');
     navigate('/login');
+  };
+
+  const handleGuardarPerfil = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const perfil = await postulantesService.guardarMiPerfil(perfilForm);
+      setPerfilPostulante(perfil);
+      setSuccess('Perfil de postulante guardado.');
+    } catch (requestError) {
+      setError(requestError.response?.data?.detail || 'No se pudo guardar el perfil.');
+    }
   };
 
   const handleEnviarPostulacion = async (e) => {
@@ -41,7 +83,6 @@ export default function UserDashboard() {
 
     const payload = {
       proceso_id: procesoSeleccionado.id,
-      postulante_id: 1,
       propuestas: [
         { tipo: 'tecnica', ruta_archivo: rutaTecnica },
         { tipo: 'economica', ruta_archivo: rutaEconomica }
@@ -56,7 +97,7 @@ export default function UserDashboard() {
       setProcesoSeleccionado(null);
       setRutaTecnica(''); setRutaEconomica(''); setRutaCv('');
       setNombreEspecialista(''); setCargoEspecialista(''); setExperienciaEspecialista('');
-      cargarConvocatorias();
+      setProcesos(await cargarConvocatorias());
     } catch (err) {
       setError(err.response?.data?.detail || 'Error al procesar la oferta.');
     }
@@ -66,15 +107,54 @@ export default function UserDashboard() {
     <div style={styles.container}>
       <header style={styles.header}>
         <div>
-          <h1 style={styles.mainTitle}>🇵🇪 Portal del Proveedor del Estado</h1>
+          <h1 style={styles.mainTitle}>Espacio de postulante</h1>
           <p style={styles.subtitle}>Plataforma GovTech — Presentación Digital de Propuestas</p>
         </div>
-        <button onClick={handleLogout} style={styles.logoutBtn}>Cerrar Sesión 🚪</button>
+        <button onClick={handleLogout} style={styles.logoutBtn}>Cerrar sesión</button>
       </header>
 
       {error && <div style={styles.errorAlert}><strong>⚠️ Alerta:</strong> {error}</div>}
       {success && <div style={styles.successAlert}><strong>✅ Éxito:</strong> {success}</div>}
-      {!procesoSeleccionado ? (
+      {!perfilCargado && (
+        <div style={styles.card}>Cargando perfil...</div>
+      )}
+      {perfilCargado && !perfilPostulante && (
+        <div style={styles.card}>
+          <h3 style={styles.cardTitle}>Completa tu perfil de postulante</h3>
+          <p style={styles.subtitle}>Necesitamos los datos de tu empresa para asociar correctamente tus ofertas.</p>
+          <form onSubmit={handleGuardarPerfil} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
+            <div style={styles.formGroup}>
+              <label htmlFor="razon_social" style={styles.label}>Razón social</label>
+              <input
+                id="razon_social"
+                type="text"
+                required
+                minLength="2"
+                maxLength="255"
+                value={perfilForm.razon_social}
+                onChange={(e) => setPerfilForm({ ...perfilForm, razon_social: e.target.value })}
+                style={styles.input}
+              />
+            </div>
+            <div style={styles.formGroup}>
+              <label htmlFor="ruc" style={styles.label}>RUC (11 dígitos)</label>
+              <input
+                id="ruc"
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]{11}"
+                maxLength="11"
+                required
+                value={perfilForm.ruc}
+                onChange={(e) => setPerfilForm({ ...perfilForm, ruc: e.target.value })}
+                style={styles.input}
+              />
+            </div>
+            <button type="submit" style={styles.submitBtn}>Guardar perfil</button>
+          </form>
+        </div>
+      )}
+      {perfilPostulante && (!procesoSeleccionado ? (
         <div style={styles.card}>
           <h3 style={styles.cardTitle}>Convocatorias Públicas Disponibles</h3>
           <div style={{overflowX: 'auto'}}>
@@ -156,36 +236,36 @@ export default function UserDashboard() {
             </div>
           </form>
         </div>
-      )}
+      ))}
     </div>
   );
 }
 
 // Estilos reutilizables compartidos
 const styles = {
-  container: { maxWidth: '900px', margin: '40px auto', padding: '0 20px', width: '100%' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px', marginBottom: '24px' },
-  mainTitle: { color: '#0f172a', fontSize: '24px', margin: '0 0 4px 0', fontWeight: '700' },
-  subtitle: { color: '#64748b', margin: 0, fontSize: '14px' },
-  logoutBtn: { backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' },
-  card: { backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' },
-  cardTitle: { margin: '0 0 16px 0', fontSize: '16px', color: '#0f172a', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px', fontWeight: '600' },
+  container: { maxWidth: '1120px', margin: '32px auto', padding: '0 24px', width: '100%' },
+  header: { display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #cbd4cd', paddingBottom: '18px', marginBottom: '24px' },
+  mainTitle: { color: '#1c2e27', fontSize: '24px', margin: '0 0 4px 0', fontWeight: '700' },
+  subtitle: { color: '#65736d', margin: 0, fontSize: '14px' },
+  logoutBtn: { backgroundColor: '#fff', color: '#344a40', border: '1px solid #9eaaa2', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' },
+  card: { backgroundColor: '#ffffff', padding: '22px', borderRadius: '6px', border: '1px solid #d5ddd7' },
+  cardTitle: { margin: '0 0 16px 0', fontSize: '17px', color: '#1c2e27', borderBottom: '1px solid #e4e9e5', paddingBottom: '10px', fontWeight: '700' },
   table: { width: '100%', borderCollapse: 'collapse', marginTop: '8px' },
-  thRow: { backgroundColor: '#f8f9fa', borderBottom: '2px solid #e2e8f0' },
-  th: { padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: '600', color: '#475569' },
-  tr: { borderBottom: '1px solid #f1f5f9' },
-  td: { padding: '12px', fontSize: '14px', color: '#334155' },
-  badge: { display: 'inline-block', backgroundColor: '#eff6ff', color: '#1e40af', padding: '2px 8px', borderRadius: '4px', fontSize: '11px', marginTop: '4px', fontWeight: '500' },
-  tableBtn: { backgroundColor: '#2563eb', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' },
+  thRow: { backgroundColor: '#f1f4f1', borderBottom: '1px solid #cbd4cd' },
+  th: { padding: '12px', textAlign: 'left', fontSize: '13px', fontWeight: '700', color: '#344a40' },
+  tr: { borderBottom: '1px solid #e4e9e5' },
+  td: { padding: '12px', fontSize: '14px', color: '#344a40' },
+  badge: { display: 'inline-block', backgroundColor: '#eaf4ee', color: '#185640', padding: '3px 8px', borderRadius: '3px', fontSize: '11px', marginTop: '4px', fontWeight: '600' },
+  tableBtn: { backgroundColor: '#176b57', color: 'white', border: 'none', padding: '7px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '12px', fontWeight: '700' },
   formGroup: { flex: 1 },
   label: { display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '13px', color: '#334155' },
-  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '14px', color: '#333' },
-  rowGrid: { display: 'flex', gap: '16px' },
-  threeGrid: { display: 'flex', gap: '12px' },
-  innerBox: { backgroundColor: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0' },
+  input: { width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #c3cec6', boxSizing: 'border-box', fontSize: '14px', color: '#1c2e27', background: '#fff' },
+  rowGrid: { display: 'flex', flexWrap: 'wrap', gap: '16px' },
+  threeGrid: { display: 'flex', flexWrap: 'wrap', gap: '12px' },
+  innerBox: { backgroundColor: '#f4f6f3', padding: '16px', borderRadius: '4px', border: '1px solid #d5ddd7' },
   innerBoxTitle: { margin: '0 0 12px 0', fontSize: '14px', color: '#334155', fontWeight: '600' },
-  submitBtn: { backgroundColor: '#10b981', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' },
-  cancelBtn: { backgroundColor: '#64748b', color: 'white', padding: '12px 24px', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px' },
-  errorAlert: { backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #fee2e2', marginBottom: '16px', fontSize: '14px' },
-  successAlert: { backgroundColor: '#f0fdf4', color: '#166534', padding: '12px 16px', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '16px', fontSize: '14px' }
+  submitBtn: { backgroundColor: '#176b57', color: 'white', padding: '12px 18px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: '700' },
+  cancelBtn: { backgroundColor: '#fff', color: '#344a40', padding: '12px 18px', border: '1px solid #9eaaa2', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' },
+  errorAlert: { backgroundColor: '#faeeee', color: '#762020', padding: '12px 16px', borderRadius: '4px', border: '1px solid #e9caca', marginBottom: '16px', fontSize: '14px' },
+  successAlert: { backgroundColor: '#eaf4ee', color: '#185640', padding: '12px 16px', borderRadius: '4px', border: '1px solid #c1dacb', marginBottom: '16px', fontSize: '14px' }
 };

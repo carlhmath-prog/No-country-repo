@@ -2,7 +2,7 @@
 
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Literal
 
 # =====================================================================
 # 1. ESQUEMAS DE AUTENTICACIÓN ORIGINALES (SIN CAMBIOS)
@@ -12,7 +12,7 @@ class UsuarioCreate(BaseModel):
     nombre_completo: str
     email: EmailStr
     password: str
-    rol: str = "postulante"
+    rol: Literal["postulante"] = "postulante"
 
 class UsuarioResponse(BaseModel):
     id: int
@@ -32,6 +32,28 @@ class LoginRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+class EvaluadorCreate(BaseModel):
+    nombre_completo: str
+    email: EmailStr
+    password: str = Field(..., min_length=12, max_length=128)
+
+class EvaluacionCreate(BaseModel):
+    estado: Literal["aprobada", "observada", "rechazada"]
+    puntaje_total: float = Field(..., ge=0, le=100)
+    observaciones: Optional[str] = None
+
+class EvaluacionResponse(BaseModel):
+    id: int
+    oferta_id: int
+    usuario_id: int
+    estado: str
+    puntaje_total: float
+    observaciones: Optional[str] = None
+
+    model_config = {
+        "from_attributes": True
+    }
 
 
 # =====================================================================
@@ -140,10 +162,23 @@ class PersonalClaveResponse(PersonalClaveCreate):
 
 class OfertaCreate(BaseModel):
     proceso_id: int
-    postulante_id: int
     propuestas: List[PropuestaCreate] = []
     documentos: List[DocumentoCreate] = []
     personal_clave: List[PersonalClaveCreate] = []
+
+class PerfilPostulanteInput(BaseModel):
+    razon_social: str = Field(..., min_length=2, max_length=255)
+    ruc: str = Field(..., pattern=r"^\d{11}$")
+
+class PerfilPostulanteResponse(BaseModel):
+    id: int
+    razon_social: str
+    ruc: str
+    correo: EmailStr
+
+    model_config = {
+        "from_attributes": True
+    }
 
 class OfertaResponse(BaseModel):
     id: int
@@ -154,6 +189,7 @@ class OfertaResponse(BaseModel):
     propuestas: List[PropuestaResponse] = []
     documentos: List[DocumentoResponse] = []
     personal_clave: List[PersonalClaveResponse] = []
+    evaluaciones: List[EvaluacionResponse] = []
 
     model_config = {
         "from_attributes": True

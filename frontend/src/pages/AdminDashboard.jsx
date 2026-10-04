@@ -1,7 +1,7 @@
 
-import React, { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { procesosService } from '../services/procesosService';
+import { ofertasService, procesosService } from '../services/procesosService';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
@@ -13,6 +13,33 @@ export default function AdminDashboard() {
   const [rutaTdr, setRutaTdr] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [ofertas, setOfertas] = useState([]);
+  const [errorOfertas, setErrorOfertas] = useState('');
+  const [successOfertas, setSuccessOfertas] = useState('');
+
+  const cargarOfertas = useCallback(async () => {
+    try {
+      setOfertas(await ofertasService.listarOfertas());
+      setErrorOfertas('');
+    } catch (requestError) {
+      setErrorOfertas(requestError.response?.data?.detail || 'No se pudieron cargar las postulaciones.');
+    }
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    ofertasService.listarOfertas()
+      .then((data) => {
+        if (isActive) setOfertas(data);
+      })
+      .catch((requestError) => {
+        if (isActive) setErrorOfertas(requestError.response?.data?.detail || 'No se pudieron cargar las postulaciones.');
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, []);
 
   const handleLogout = () => {
     sessionStorage.removeItem('token');
@@ -55,19 +82,74 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleEvaluarOferta = async (e, oferta) => {
+    e.preventDefault();
+    const formData = new FormData(e.currentTarget);
+    try {
+      const evaluacion = await ofertasService.evaluarOferta(oferta.id, {
+        estado: formData.get('estado'),
+        puntaje_total: Number(formData.get('puntaje_total')),
+        observaciones: formData.get('observaciones') || null,
+      });
+      setOfertas((current) => current.map((item) => item.id === oferta.id
+        ? { ...item, evaluaciones: [...(item.evaluaciones || []).filter((entry) => entry.usuario_id !== evaluacion.usuario_id), evaluacion] }
+        : item));
+      setSuccessOfertas(`Evaluación de la oferta #${oferta.id} guardada.`);
+    } catch (requestError) {
+      setErrorOfertas(requestError.response?.data?.detail || 'No se pudo guardar la evaluación.');
+    }
+  };
+
 
   return (
     <div style={styles.container}>
       <header style={styles.header}>
         <div>
           <h1 style={styles.mainTitle}>🏛️ Sistema de Contrataciones Estatales</h1>
-          <p style={styles.subtitle}>Módulo de la Entidad Contratante — Registro de Licitaciones</p>
+          <p style={styles.subtitle}>Panel de evaluador · Procesos y postulaciones</p>
         </div>
         <button onClick={handleLogout} style={styles.logoutBtn}>Cerrar Sesión 🚪</button>
       </header>
 
       {error && <div style={styles.errorAlert}><strong>⚠️ Sistema:</strong> {error}</div>}
       {success && <div style={styles.successAlert}><strong>✅ Éxito:</strong> {success}</div>}
+
+      <section style={{...styles.card, marginBottom: '20px'}}>
+        <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+          <h2 style={styles.cardTitle}>Revisión de postulaciones</h2>
+          <button type="button" onClick={cargarOfertas} style={styles.tableBtn}>Actualizar</button>
+        </div>
+        {errorOfertas && <div style={styles.errorAlert}>{errorOfertas}</div>}
+        {successOfertas && <div style={styles.successAlert} role="status">{successOfertas}</div>}
+        {ofertas.length === 0 ? <p style={styles.subtitle}>No hay postulaciones para revisar.</p> : (
+          <div style={{overflowX: 'auto'}}>
+            <table style={styles.table}>
+              <thead><tr style={styles.thRow}>
+                <th style={styles.th}>Oferta</th><th style={styles.th}>Proceso</th><th style={styles.th}>Postulante</th><th style={styles.th}>Evaluación</th>
+              </tr></thead>
+              <tbody>{ofertas.map((oferta) => (
+                <tr key={oferta.id} style={styles.tr}>
+                  <td style={styles.td}>#{oferta.id}</td>
+                  <td style={styles.td}>#{oferta.proceso_id}</td>
+                  <td style={styles.td}>#{oferta.postulante_id}</td>
+                  <td style={styles.td}>
+                    <form onSubmit={(event) => handleEvaluarOferta(event, oferta)} style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
+                      <select name="estado" defaultValue={oferta.evaluaciones?.[0]?.estado || 'observada'} style={styles.input}>
+                        <option value="aprobada">Aprobada</option>
+                        <option value="observada">Observada</option>
+                        <option value="rechazada">Rechazada</option>
+                      </select>
+                      <input name="puntaje_total" type="number" min="0" max="100" step="0.01" defaultValue={oferta.evaluaciones?.[0]?.puntaje_total || 0} required style={{...styles.input, maxWidth: '100px'}} />
+                      <input name="observaciones" type="text" placeholder="Observaciones" defaultValue={oferta.evaluaciones?.[0]?.observaciones || ''} style={{...styles.input, minWidth: '180px'}} />
+                      <button type="submit" style={styles.tableBtn}>Guardar evaluación</button>
+                    </form>
+                  </td>
+                </tr>
+              ))}</tbody>
+            </table>
+          </div>
+        )}
+      </section>
 
       <form onSubmit={handleCrearProceso} style={styles.form}>
         {/* Sección 1 */}
@@ -112,19 +194,19 @@ export default function AdminDashboard() {
 
 // Estilos modulares integrados en objetos JS
 const styles = {
-  container: { maxWidth: '750px', margin: '40px auto', padding: '0 20px', width: '100%' },
-  header: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid #e2e8f0', paddingBottom: '16px', marginBottom: '24px' },
-  mainTitle: { color: '#0f172a', fontSize: '24px', margin: '0 0 4px 0', fontWeight: '700' },
-  subtitle: { color: '#64748b', margin: 0, fontSize: '14px' },
-  logoutBtn: { backgroundColor: '#ef4444', color: 'white', border: 'none', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' },
+  container: { maxWidth: '1120px', margin: '32px auto', padding: '0 24px', width: '100%' },
+  header: { display: 'flex', flexWrap: 'wrap', gap: '16px', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #cbd4cd', paddingBottom: '18px', marginBottom: '24px' },
+  mainTitle: { color: '#1c2e27', fontSize: '24px', margin: '0 0 4px 0', fontWeight: '700' },
+  subtitle: { color: '#65736d', margin: 0, fontSize: '14px' },
+  logoutBtn: { backgroundColor: '#fff', color: '#344a40', border: '1px solid #9eaaa2', padding: '8px 14px', borderRadius: '4px', cursor: 'pointer', fontWeight: '600', fontSize: '13px' },
   form: { display: 'flex', flexDirection: 'column', gap: '20px' },
-  card: { backgroundColor: '#ffffff', padding: '24px', borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0' },
-  cardTitle: { margin: '0 0 16px 0', fontSize: '16px', color: '#1e3a8a', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px', fontWeight: '600' },
+  card: { backgroundColor: '#ffffff', padding: '22px', borderRadius: '6px', border: '1px solid #d5ddd7' },
+  cardTitle: { margin: '0 0 16px 0', fontSize: '17px', color: '#1c2e27', borderBottom: '1px solid #e4e9e5', paddingBottom: '10px', fontWeight: '700' },
   formGroup: { marginBottom: '16px' },
   label: { display: 'block', fontWeight: '600', marginBottom: '6px', fontSize: '13px', color: '#334155' },
-  input: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '14px', color: '#333' },
+  input: { width: '100%', padding: '10px', borderRadius: '4px', border: '1px solid #c3cec6', boxSizing: 'border-box', fontSize: '14px', color: '#1c2e27', background: '#fff' },
   textarea: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '14px', minHeight: '80px', fontFamily: 'inherit', color: '#333' },
-  submitBtn: { backgroundColor: '#2563eb', color: 'white', padding: '14px', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '15px', fontWeight: '600', boxShadow: '0 4px 6px -1px rgba(37,99,235,0.2)' },
-  errorAlert: { backgroundColor: '#fef2f2', color: '#991b1b', padding: '12px 16px', borderRadius: '8px', border: '1px solid #fee2e2', marginBottom: '16px', fontSize: '14px' },
-  successAlert: { backgroundColor: '#f0fdf4', color: '#166534', padding: '12px 16px', borderRadius: '8px', border: '1px solid #bbf7d0', marginBottom: '16px', fontSize: '14px' }
+  submitBtn: { backgroundColor: '#176b57', color: 'white', padding: '13px 18px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: '700' },
+  errorAlert: { backgroundColor: '#faeeee', color: '#762020', padding: '12px 16px', borderRadius: '4px', border: '1px solid #e9caca', marginBottom: '16px', fontSize: '14px' },
+  successAlert: { backgroundColor: '#eaf4ee', color: '#185640', padding: '12px 16px', borderRadius: '4px', border: '1px solid #c1dacb', marginBottom: '16px', fontSize: '14px' }
 };

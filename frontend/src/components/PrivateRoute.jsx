@@ -1,4 +1,3 @@
-import React from 'react';
 import { Navigate } from 'react-router-dom';
 import { jwtDecode } from 'jwt-decode';
 
@@ -10,27 +9,18 @@ function PrivateRoute({ children, role }) {
     return <Navigate to="/" />;
   }
 
+  let decoded;
   try {
-    const decoded = jwtDecode(token);
+    decoded = jwtDecode(token);
+  } catch {
+    decoded = null;
+  }
 
-    console.log("DECODED TOKEN:", decoded);
-
-    // ❌ sin rol en token → bloquear
-    if (!decoded.rol) {
-      return <Navigate to="/" />;
-    }
-
-    // ❌ rol incorrecto → bloquear
-    if (role && decoded.rol !== role) {
-      return <Navigate to="/" />;
-    }
-
-    // ✅ todo OK → permitir acceso
-    return children;
-
-  } catch (error) {
+  if (!decoded?.rol || (role && decoded.rol !== role)) {
     return <Navigate to="/" />;
   }
+
+  return children;
 }
 
 export default PrivateRoute;

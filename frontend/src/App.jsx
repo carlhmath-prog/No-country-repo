@@ -45,13 +45,13 @@
 // export default App;
 
 
-import React from 'react';
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
 
 import Login from './pages/Login';
 import Register from './pages/Register';
 import UserDashboard from './pages/UserDashboard';
 import AdminDashboard from './pages/AdminDashboard';
+import SuperAdminDashboard from './pages/SuperAdminDashboard';
 
 import PrivateRoute from './components/PrivateRoute';
 
@@ -80,8 +80,17 @@ function App() {
         <Route
           path="/admin"
           element={
-            <PrivateRoute role="admin">
+            <PrivateRoute role="evaluador">
               <AdminDashboard />
+            </PrivateRoute>
+          }
+        />
+
+        <Route
+          path="/superadmin"
+          element={
+            <PrivateRoute role="superadmin">
+              <SuperAdminDashboard />
             </PrivateRoute>
           }
         />
