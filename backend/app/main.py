@@ -29,7 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .database import engine, Base
 # Importamos de manera ordenada todos los routers de la aplicación
-from .routers import auth, procesos, ofertas, postulantes
+from .routers import auth, procesos, ofertas, postulantes, archivos, asistente
 
 app = FastAPI(
     title="GovTech Perú - Automatización de Contrataciones",
@@ -55,6 +55,8 @@ app.include_router(auth.router, prefix="/auth")
 app.include_router(procesos.router)  # /procesos prefix configurado internamente
 app.include_router(ofertas.router)   # /ofertas prefix configurado internamente
 app.include_router(postulantes.router)
+app.include_router(archivos.router)
+app.include_router(asistente.router)
 
 @app.get("/")
 def root():

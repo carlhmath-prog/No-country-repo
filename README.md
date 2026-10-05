@@ -83,7 +83,7 @@ Este script hace lo siguiente automáticamente:
 
 > Importante: el frontend queda en `5173` para toda la app. Si ese puerto está ocupado por otra app local, debes cerrarla antes de iniciar el proyecto o cambiarlo de forma explícita en el script.
 
-El backend del Compose conecta a PostgreSQL por el gateway del host (`host.docker.internal`). La configuración incluye `host-gateway` porque en algunos entornos de Codespaces los contenedores no se alcanzan directamente por el nombre interno `db`.
+El backend de Compose usa la red del host en entornos Linux para compartir la resolución DNS y la salida a Internet del workspace, necesarias para conectarse a OpenAI. PostgreSQL publica el puerto `5432` en el host y el backend se conecta mediante `host.docker.internal`. Si usas Docker Desktop, habilita el soporte de host networking o ejecuta el backend fuera de Docker con las variables de entorno configuradas.
 
 ### Opción manual
 
@@ -136,8 +136,33 @@ Abre la URL que indique Vite, normalmente `http://localhost:5173`. `npm run lint
 - `GET /postulantes/me` y `PUT /postulantes/me`: consultar y guardar el perfil propio del postulante.
 - `GET /procesos/`: consultar convocatorias públicas. `POST /procesos/` requiere rol evaluador o superadmin.
 - `POST /ofertas/`: presentar una oferta asociada al perfil autenticado.
+- `GET /ofertas/mis`: consultar las ofertas propias del postulante con el resumen del proceso y los datos de su empresa; no requiere configurar IA.
 - `GET /ofertas/` y `PUT /ofertas/{id}/evaluacion`: revisar y evaluar ofertas como evaluador o superadmin.
+- `POST /ofertas/{id}/analisis-ia`: comparar los PDF de una oferta con el TDR usando OpenAI; requiere evaluador o superadmin.
+- `POST /asistente/preguntar`: asistente RAG por proceso con recuperación de TDR y ofertas permitidas según el rol del usuario.
+- `POST /archivos/tdr` y `POST /archivos/ofertas`: carga autenticada de PDF para procesos y ofertas (máximo 15 MB).
 - `GET /auth/evaluadores` y `POST /auth/evaluadores`: gestión de cuentas evaluadoras reservada al superadmin.
+
+### Análisis asistido de propuestas con IA
+
+El evaluador carga el TDR del proceso en PDF y el postulante adjunta la propuesta técnica, la económica y el CV, también en PDF. Desde el panel de evaluación se puede solicitar un análisis que compara esos documentos y registra un resumen, hallazgos con evidencia y recomendaciones. Los resultados son orientativos: no asignan puntaje ni reemplazan la decisión del evaluador.
+
+Para habilitarlo, define `OPENAI_API_KEY` en el entorno antes de iniciar Docker Compose. El modelo predeterminado es `gpt-4o-mini`; se puede cambiar con `OPENAI_MODEL`. El backend envía los PDF a OpenAI durante cada análisis e intenta eliminar los archivos remotos al terminar. No cargues documentos confidenciales sin autorización y sin revisar los términos de tratamiento de datos aplicables. Los archivos originales se guardan localmente en `backend/data/uploads/`, excluidos de Git; en producción deben trasladarse a almacenamiento privado con políticas de acceso, retención y eliminación.
+
+Por ejemplo, en una terminal local configura la variable sin añadirla a los archivos del repositorio y luego inicia Compose:
+
+```bash
+export OPENAI_API_KEY="tu-clave"
+docker compose up --build -d
+```
+
+El análisis requiere iniciar sesión como evaluador o superadmin y usar el botón **Analizar con IA** en una oferta. Si no está configurada la clave, la API devuelve un error explícito y el resto del sistema continúa disponible.
+
+### Asistente RAG con citas
+
+Los paneles de postulante y evaluador incluyen un asistente para consultar un proceso. El backend extrae texto de los PDF, lo divide en fragmentos, genera embeddings con `OPENAI_EMBEDDING_MODEL` (predeterminado `text-embedding-3-small`), recupera fragmentos semánticamente relevantes y responde con citas de documento y página. La primera consulta puede tardar más porque crea y guarda el índice en la base de datos; las siguientes reutilizan esos embeddings. Para limitar consumo y memoria, cada consulta admite hasta 20 documentos y cada PDF hasta 60 fragmentos.
+
+El alcance se verifica en el servidor antes de recuperar fragmentos: el postulante ve el TDR de procesos publicados y solo sus propios documentos de oferta; el evaluador y superadmin pueden consultar las ofertas del proceso seleccionado. Los documentos escaneados sin texto extraíble se rechazan, pues todavía no hay OCR. Se ignoran citas del modelo que no correspondan a las fuentes devueltas por el backend. Las consultas y los fragmentos enviados a OpenAI deben tratarse como transferencia de datos a un tercero; no uses esta función con documentos confidenciales sin autorización y revisión de privacidad.
 
 ## Ejecutar con Docker Compose
 
@@ -194,3 +219,14 @@ No inicia el frontend; para probar la interfaz, ejecuta los comandos de frontend
 ## Base de datos y migraciones
 
 Al iniciar, `backend/app/main.py` crea las tablas con SQLAlchemy. Hay archivos de configuración e historial de Alembic, pero Alembic no está incluido en `backend/requirements.txt`; por tanto, las instrucciones anteriores no ejecutan migraciones con Alembic.
+
+## Estado de desarrollo y siguientes pasos
+
+1. **Documentos:** ya se cargan y almacenan TDR y documentos de oferta PDF (máximo 15 MB). Falta pasar a almacenamiento de objetos privado, políticas de retención y análisis antimalware.
+2. **Datos iniciales:** la publicación de procesos ya registra la entidad contratante proporcionada en el formulario y reutiliza entidades existentes por RUC. La consulta pública ahora lista únicamente procesos publicados con fecha de cierre futura. Falta una pantalla para administrar el catálogo de entidades y elegirlas entre varias.
+3. **IA y RAG:** ya existe un análisis IA de propuestas y un asistente RAG con recuperación semántica, citas y control de acceso por rol. Falta incorporar OCR, criterios estructurados, evaluación de calidad y un índice vectorial escalable; la IA no debe aprobar o rechazar automáticamente.
+4. **Migraciones:** las tablas nuevas se crean al iniciar la aplicación, pero falta incorporar Alembic al entorno y adoptar migraciones versionadas antes de desplegar o evolucionar esquemas en producción.
+5. **Producción y privacidad:** la clave de OpenAI se configura por variable de entorno y no debe guardarse en Git. Antes de producción faltan gestión segura de secretos, consentimiento y política de privacidad, límites de costo, monitoreo y almacenamiento privado.
+6. **Pruebas:** el build y lint del frontend están configurados, y hay pruebas unitarias de almacenamiento PDF y RAG; faltan pruebas integrales de API/UI, fallos de proveedores y evaluación sistemática de calidad.
+
+Los postulantes pueden confirmar sus envíos desde **Mis postulaciones** en su panel. El evaluador ve razón social, RUC y correo junto a cada oferta. Estas funciones usan la base de datos normal y funcionan aunque `OPENAI_API_KEY` no esté configurada.

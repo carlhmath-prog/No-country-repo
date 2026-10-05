@@ -23,13 +23,16 @@ services:
     build:
       context: ./backend
     command: python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Host networking uses the workspace DNS and outbound route for OpenAI.
+    network_mode: host
     volumes:
       - ./backend:/app
-    ports:
-      - "8000:8000"
     environment:
       DATABASE_URL: postgresql://user:password@host.docker.internal:5432/govtech_db
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-govtech-local-development-secret-change-before-deploy-2026}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
+      OPENAI_EMBEDDING_MODEL: ${OPENAI_EMBEDDING_MODEL:-text-embedding-3-small}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

@@ -2,20 +2,25 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ofertasService, procesosService } from '../services/procesosService';
+import AssistantChat from '../components/AssistantChat';
 
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const [codigo, setCodigo] = useState('');
   const [titulo, setTitulo] = useState('');
   const [descripcion, setDescripcion] = useState('');
+  const [entidadNombre, setEntidadNombre] = useState('');
+  const [entidadRuc, setEntidadRuc] = useState('');
+  const [entidadDireccion, setEntidadDireccion] = useState('');
   const [fechaCierre, setFechaCierre] = useState('');
   const [tituloTdr, setTituloTdr] = useState('');
-  const [rutaTdr, setRutaTdr] = useState('');
+  const [archivoTdr, setArchivoTdr] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [ofertas, setOfertas] = useState([]);
   const [errorOfertas, setErrorOfertas] = useState('');
   const [successOfertas, setSuccessOfertas] = useState('');
+  const [analizandoOferta, setAnalizandoOferta] = useState(null);
 
   const cargarOfertas = useCallback(async () => {
     try {
@@ -51,6 +56,7 @@ export default function AdminDashboard() {
     e.preventDefault();
     setError('');
     setSuccess('');
+    const form = e.currentTarget;
 
     // 🛡️ Validación de seguridad: Verifica que la fecha exista y sea válida
     const objetoFecha = new Date(fechaCierre);
@@ -58,27 +64,55 @@ export default function AdminDashboard() {
       setError('Por favor, ingrese una fecha y hora límite de cierre válida.');
       return;
     }
-
-    const payload = {
-      codigo,
-      titulo,
-      descripcion,
-      fecha_cierre: objetoFecha.toISOString(), // Convertimos de forma segura
-      entidad_id: 1,
-      tdr: {
-        version: "1.0",
-        titulo: tituloTdr,
-        descripcion: "TDR oficial digitalizado para el proceso",
-        ruta_archivo: rutaTdr
-      }
-    };
+    if (!archivoTdr) {
+      setError('Selecciona el archivo PDF del TDR.');
+      return;
+    }
 
     try {
+      const rutaTdr = await procesosService.subirTdr(archivoTdr);
+      const payload = {
+        codigo,
+        titulo,
+        descripcion,
+        fecha_cierre: objetoFecha.toISOString(),
+        entidad: {
+          nombre: entidadNombre,
+          ruc: entidadRuc,
+          direccion: entidadDireccion || null
+        },
+        tdr: {
+          version: "1.0",
+          titulo: tituloTdr,
+          descripcion: "TDR oficial digitalizado para el proceso",
+          ruta_archivo: rutaTdr
+        }
+      };
+
       await procesosService.crearProceso(payload);
       setSuccess(`¡Convocatoria ${codigo} publicada con éxito! 🏛️`);
-      setCodigo(''); setTitulo(''); setDescripcion(''); setFechaCierre(''); setTituloTdr(''); setRutaTdr('');
+      setCodigo(''); setTitulo(''); setDescripcion(''); setFechaCierre(''); setTituloTdr(''); setArchivoTdr(null);
+      setEntidadNombre(''); setEntidadRuc(''); setEntidadDireccion('');
+      form.reset();
     } catch (err) {
       setError(err.response?.data?.detail || 'Error al publicar la convocatoria.');
+    }
+  };
+
+  const handleAnalizarOferta = async (oferta) => {
+    setAnalizandoOferta(oferta.id);
+    setErrorOfertas('');
+    setSuccessOfertas('');
+    try {
+      const analisis = await ofertasService.analizarOferta(oferta.id);
+      setOfertas((current) => current.map((item) => item.id === oferta.id
+        ? { ...item, analisis_ia: [analisis, ...(item.analisis_ia || [])] }
+        : item));
+      setSuccessOfertas(`Análisis IA de la oferta #${oferta.id} completado. Revisa los hallazgos antes de decidir.`);
+    } catch (requestError) {
+      setErrorOfertas(requestError.response?.data?.detail || 'No se pudo analizar la oferta.');
+    } finally {
+      setAnalizandoOferta(null);
     }
   };
 
@@ -114,6 +148,8 @@ export default function AdminDashboard() {
       {error && <div style={styles.errorAlert}><strong>⚠️ Sistema:</strong> {error}</div>}
       {success && <div style={styles.successAlert}><strong>✅ Éxito:</strong> {success}</div>}
 
+      <AssistantChat />
+
       <section style={{...styles.card, marginBottom: '20px'}}>
         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
           <h2 style={styles.cardTitle}>Revisión de postulaciones</h2>
@@ -121,6 +157,7 @@ export default function AdminDashboard() {
         </div>
         {errorOfertas && <div style={styles.errorAlert}>{errorOfertas}</div>}
         {successOfertas && <div style={styles.successAlert} role="status">{successOfertas}</div>}
+        <p style={styles.subtitle}>El análisis IA envía el TDR y los PDF de la oferta a OpenAI. Úsalo como apoyo: verifica evidencias y toma la decisión final como evaluador.</p>
         {ofertas.length === 0 ? <p style={styles.subtitle}>No hay postulaciones para revisar.</p> : (
           <div style={{overflowX: 'auto'}}>
             <table style={styles.table}>
@@ -130,9 +167,34 @@ export default function AdminDashboard() {
               <tbody>{ofertas.map((oferta) => (
                 <tr key={oferta.id} style={styles.tr}>
                   <td style={styles.td}>#{oferta.id}</td>
-                  <td style={styles.td}>#{oferta.proceso_id}</td>
-                  <td style={styles.td}>#{oferta.postulante_id}</td>
                   <td style={styles.td}>
+                    <strong>{oferta.proceso.codigo}</strong>
+                    <div>{oferta.proceso.titulo}</div>
+                  </td>
+                  <td style={styles.td}>
+                    <strong>{oferta.postulante.razon_social}</strong>
+                    <div>RUC: {oferta.postulante.ruc}</div>
+                    <div>{oferta.postulante.correo}</div>
+                  </td>
+                  <td style={styles.td}>
+                    <button type="button" disabled={analizandoOferta === oferta.id} onClick={() => handleAnalizarOferta(oferta)} style={styles.tableBtn}>
+                      {analizandoOferta === oferta.id ? 'Analizando…' : 'Analizar con IA'}
+                    </button>
+                    {oferta.analisis_ia?.[0] && (
+                      <div style={styles.aiResult}>
+                        <strong>Análisis asistido · {oferta.analisis_ia[0].resultado.estado_general}</strong>
+                        <p>{oferta.analisis_ia[0].resultado.resumen}</p>
+                        <ul>
+                          {oferta.analisis_ia[0].resultado.hallazgos.map((hallazgo, index) => (
+                            <li key={`${hallazgo.requisito}-${index}`}>
+                              <strong>{hallazgo.estado}:</strong> {hallazgo.requisito}
+                              {hallazgo.evidencia && <div>Evidencia: “{hallazgo.evidencia}” ({hallazgo.documento})</div>}
+                            </li>
+                          ))}
+                        </ul>
+                        <small>Resultado orientativo; la decisión final corresponde al evaluador.</small>
+                      </div>
+                    )}
                     <form onSubmit={(event) => handleEvaluarOferta(event, oferta)} style={{display: 'flex', gap: '8px', flexWrap: 'wrap'}}>
                       <select name="estado" defaultValue={oferta.evaluaciones?.[0]?.estado || 'observada'} style={styles.input}>
                         <option value="aprobada">Aprobada</option>
@@ -168,6 +230,18 @@ export default function AdminDashboard() {
             <textarea placeholder="Resumen técnico..." value={descripcion} onChange={e => setDescripcion(e.target.value)} style={styles.textarea} />
           </div>
           <div style={styles.formGroup}>
+            <label style={styles.label}>Entidad contratante</label>
+            <input type="text" placeholder="Nombre de la entidad" required maxLength="255" value={entidadNombre} onChange={e => setEntidadNombre(e.target.value)} style={styles.input} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>RUC de la entidad (11 dígitos)</label>
+            <input type="text" inputMode="numeric" pattern="[0-9]{11}" maxLength="11" required value={entidadRuc} onChange={e => setEntidadRuc(e.target.value)} style={styles.input} />
+          </div>
+          <div style={styles.formGroup}>
+            <label style={styles.label}>Dirección de la entidad (opcional)</label>
+            <input type="text" maxLength="255" value={entidadDireccion} onChange={e => setEntidadDireccion(e.target.value)} style={styles.input} />
+          </div>
+          <div style={styles.formGroup}>
             <label style={styles.label}>Fecha y Hora Límite de Cierre</label>
             <input type="datetime-local" required value={fechaCierre} onChange={e => setFechaCierre(e.target.value)} style={styles.input} />
           </div>
@@ -181,8 +255,8 @@ export default function AdminDashboard() {
             <input type="text" placeholder="Ej: Bases Integradas v1.0" required value={tituloTdr} onChange={e => setTituloTdr(e.target.value)} style={styles.input} />
           </div>
           <div style={styles.formGroup}>
-            <label style={styles.label}>Ruta del Archivo PDF Firmado</label>
-            <input type="text" placeholder="Ej: /documentos/tdr-firmado.pdf" required value={rutaTdr} onChange={e => setRutaTdr(e.target.value)} style={styles.input} />
+            <label style={styles.label}>Archivo PDF del TDR (máximo 15 MB)</label>
+            <input type="file" accept="application/pdf,.pdf" required onChange={(e) => setArchivoTdr(e.target.files?.[0] || null)} style={styles.input} />
           </div>
         </div>
 
@@ -208,5 +282,6 @@ const styles = {
   textarea: { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '14px', minHeight: '80px', fontFamily: 'inherit', color: '#333' },
   submitBtn: { backgroundColor: '#176b57', color: 'white', padding: '13px 18px', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '14px', fontWeight: '700' },
   errorAlert: { backgroundColor: '#faeeee', color: '#762020', padding: '12px 16px', borderRadius: '4px', border: '1px solid #e9caca', marginBottom: '16px', fontSize: '14px' },
-  successAlert: { backgroundColor: '#eaf4ee', color: '#185640', padding: '12px 16px', borderRadius: '4px', border: '1px solid #c1dacb', marginBottom: '16px', fontSize: '14px' }
+  successAlert: { backgroundColor: '#eaf4ee', color: '#185640', padding: '12px 16px', borderRadius: '4px', border: '1px solid #c1dacb', marginBottom: '16px', fontSize: '14px' },
+  aiResult: { marginTop: '12px', padding: '12px', background: '#f4f6f3', borderRadius: '4px', fontSize: '13px', minWidth: '260px' }
 };

@@ -2,9 +2,18 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
 from typing import List
+import json
+import logging
+import os
+from openai import OpenAIError
+from pydantic import ValidationError
 from ..database import get_db
 from .. import models, schemas
 from ..security import requerir_rol
+from ..ai_analysis import analizar_documentos
+from ..ai_errors import convertir_error_openai
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/ofertas",
@@ -125,6 +134,24 @@ def listar_ofertas(db: Session = Depends(get_db)):
     return db.query(models.Oferta).all()
 
 
+@router.get(
+    "/mis",
+    response_model=List[schemas.OfertaResponse],
+)
+def listar_mis_ofertas(
+    user: models.Usuario = Depends(requerir_rol("postulante")),
+    db: Session = Depends(get_db),
+):
+    postulante = db.query(models.Postulante).filter(
+        models.Postulante.correo == user.email
+    ).first()
+    if postulante is None:
+        return []
+    return db.query(models.Oferta).filter(
+        models.Oferta.postulante_id == postulante.id
+    ).order_by(models.Oferta.fecha_presentacion.desc()).all()
+
+
 @router.put(
     "/{oferta_id}/evaluacion",
     response_model=schemas.EvaluacionResponse,
@@ -153,3 +180,67 @@ def evaluar_oferta(
     db.commit()
     db.refresh(registro)
     return registro
+
+
+@router.post(
+    "/{oferta_id}/analisis-ia",
+    response_model=schemas.AnalisisIAResponse,
+)
+def analizar_oferta(
+    oferta_id: int,
+    user: models.Usuario = Depends(requerir_rol("evaluador")),
+    db: Session = Depends(get_db),
+):
+    if not os.getenv("OPENAI_API_KEY"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="El análisis IA no está configurado. Define OPENAI_API_KEY en el backend.",
+        )
+
+    oferta = db.query(models.Oferta).filter(models.Oferta.id == oferta_id).first()
+    if oferta is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="La oferta no existe.")
+    if not oferta.proceso.tdr or not oferta.proceso.tdr.ruta_archivo:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="El proceso no tiene un TDR PDF cargado.",
+        )
+
+    proposal_documents = [
+        (propuesta.tipo, propuesta.ruta_archivo)
+        for propuesta in oferta.propuestas
+    ] + [
+        (documento.tipo or "Documento de oferta", documento.ruta_archivo)
+        for documento in oferta.documentos
+    ]
+    if not proposal_documents:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="La oferta no tiene documentos PDF para analizar.",
+        )
+
+    try:
+        modelo, resultado = analizar_documentos(oferta.proceso.tdr.ruta_archivo, proposal_documents)
+        resultado_validado = schemas.ResultadoAnalisisIA.model_validate(resultado)
+    except RuntimeError as error:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error))
+    except OpenAIError as error:
+        logger.exception("Falló el proveedor IA al analizar la oferta %s", oferta_id)
+        raise convertir_error_openai(error)
+    except (ValueError, ValidationError):
+        logger.exception("Falló el análisis IA de la oferta %s", oferta_id)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="No se pudo completar el análisis IA. Revisa la configuración o inténtalo de nuevo.",
+        )
+
+    analisis = models.AnalisisIA(
+        oferta_id=oferta.id,
+        evaluador_id=user.id,
+        modelo=modelo,
+        resultado_json=json.dumps(resultado_validado.model_dump(), ensure_ascii=False),
+    )
+    db.add(analisis)
+    db.commit()
+    db.refresh(analisis)
+    return analisis

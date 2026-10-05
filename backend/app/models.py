@@ -1,3 +1,5 @@
+import json
+
 from sqlalchemy import Column, Integer, String, DateTime, Text, ForeignKey, Numeric, Date, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -97,6 +99,7 @@ class Oferta(Base):
     documentos = relationship('Documento', back_populates='oferta')
     personal_clave = relationship('PersonalClave', back_populates='oferta')
     evaluaciones = relationship('Evaluacion', back_populates='oferta')
+    analisis_ia = relationship('AnalisisIA', back_populates='oferta', order_by='AnalisisIA.fecha_analisis.desc()')
 
 class Propuesta(Base):
     __tablename__ = 'propuestas'
@@ -152,3 +155,33 @@ class DetalleEvaluacion(Base):
     puntaje = Column(Numeric(5, 2), nullable=False)
     evaluacion = relationship('Evaluacion', back_populates='detalles')
     factor = relationship('FactorEvaluacion', back_populates='detalles_evaluacion')
+
+
+class AnalisisIA(Base):
+    __tablename__ = 'analisis_ia'
+    id = Column(Integer, primary_key=True, index=True)
+    oferta_id = Column(Integer, ForeignKey('ofertas.id'), nullable=False)
+    evaluador_id = Column(Integer, ForeignKey('usuarios.id'), nullable=False)
+    modelo = Column(String(100), nullable=False)
+    resultado_json = Column(Text, nullable=False)
+    fecha_analisis = Column(DateTime, default=datetime.utcnow, nullable=False)
+    oferta = relationship('Oferta', back_populates='analisis_ia')
+
+    @property
+    def resultado(self):
+        return json.loads(self.resultado_json)
+
+
+class FragmentoDocumento(Base):
+    __tablename__ = "fragmentos_documento"
+    id = Column(Integer, primary_key=True, index=True)
+    storage_key = Column(String(64), nullable=False, index=True)
+    chunk_index = Column(Integer, nullable=False)
+    proceso_id = Column(Integer, ForeignKey("procesos_seleccion.id"), nullable=False, index=True)
+    oferta_id = Column(Integer, ForeignKey("ofertas.id"), nullable=True, index=True)
+    tipo_documento = Column(String(50), nullable=False)
+    nombre_documento = Column(String(255), nullable=False)
+    pagina = Column(Integer, nullable=False)
+    contenido = Column(Text, nullable=False)
+    embedding_json = Column(Text, nullable=False)
+    __table_args__ = (UniqueConstraint("storage_key", "chunk_index", name="unique_document_chunk"),)

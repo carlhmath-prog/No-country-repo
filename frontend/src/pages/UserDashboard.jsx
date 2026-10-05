@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { procesosService, ofertasService, postulantesService } from '../services/procesosService';
+import AssistantChat from '../components/AssistantChat';
 
 export default function UserDashboard() {
   const navigate = useNavigate();
@@ -11,10 +12,12 @@ export default function UserDashboard() {
   const [perfilPostulante, setPerfilPostulante] = useState(null);
   const [perfilCargado, setPerfilCargado] = useState(false);
   const [perfilForm, setPerfilForm] = useState({ razon_social: '', ruc: '' });
+  const [misOfertas, setMisOfertas] = useState([]);
+  const [ofertasCargadas, setOfertasCargadas] = useState(false);
 
-  const [rutaTecnica, setRutaTecnica] = useState('');
-  const [rutaEconomica, setRutaEconomica] = useState('');
-  const [rutaCv, setRutaCv] = useState('');
+  const [archivoTecnico, setArchivoTecnico] = useState(null);
+  const [archivoEconomico, setArchivoEconomico] = useState(null);
+  const [archivoCv, setArchivoCv] = useState(null);
   const [nombreEspecialista, setNombreEspecialista] = useState('');
   const [cargoEspecialista, setCargoEspecialista] = useState('');
   const [experienciaEspecialista, setExperienciaEspecialista] = useState('');
@@ -31,7 +34,7 @@ export default function UserDashboard() {
         if (isActive) setProcesos(data);
       })
       .catch(() => {
-        if (isActive) setError('Error al obtener los procesos vigentes del servidor.');
+        if (isActive) setError('No se pudieron cargar los procesos. Comprueba que el backend esté activo e inténtalo de nuevo.');
       });
 
     return () => {
@@ -59,6 +62,27 @@ export default function UserDashboard() {
     };
   }, []);
 
+  const cargarMisOfertas = useCallback(async () => {
+    const ofertas = await ofertasService.listarMisOfertas();
+    setMisOfertas(ofertas);
+    setOfertasCargadas(true);
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    ofertasService.listarMisOfertas()
+      .then((ofertas) => {
+        if (isActive) setMisOfertas(ofertas);
+      })
+      .catch((requestError) => {
+        if (isActive) setError(requestError.response?.data?.detail || 'No se pudieron cargar tus postulaciones.');
+      })
+      .finally(() => {
+        if (isActive) setOfertasCargadas(true);
+      });
+    return () => { isActive = false; };
+  }, []);
+
   const handleLogout = () => {
     sessionStorage.removeItem('token');
     localStorage.removeItem('token');
@@ -80,22 +104,31 @@ export default function UserDashboard() {
   const handleEnviarPostulacion = async (e) => {
     e.preventDefault();
     setError(''); setSuccess('');
-
-    const payload = {
-      proceso_id: procesoSeleccionado.id,
-      propuestas: [
-        { tipo: 'tecnica', ruta_archivo: rutaTecnica },
-        { tipo: 'economica', ruta_archivo: rutaEconomica }
-      ],
-      documentos: [{ tipo: 'CV', ruta_archivo: rutaCv }],
-      personal_clave: [{ nombre: nombreEspecialista, cargo: cargoEspecialista, experiencia: experienciaEspecialista }]
-    };
+    if (!archivoTecnico || !archivoEconomico || !archivoCv) {
+      setError('Adjunta la propuesta técnica, la económica y el CV en formato PDF.');
+      return;
+    }
 
     try {
-      await ofertasService.presentarOferta(payload);
+      const [rutaTecnica, rutaEconomica, rutaCv] = await Promise.all([
+        ofertasService.subirDocumento(archivoTecnico),
+        ofertasService.subirDocumento(archivoEconomico),
+        ofertasService.subirDocumento(archivoCv),
+      ]);
+      const payload = {
+        proceso_id: procesoSeleccionado.id,
+        propuestas: [
+          { tipo: 'tecnica', ruta_archivo: rutaTecnica },
+          { tipo: 'economica', ruta_archivo: rutaEconomica }
+        ],
+        documentos: [{ tipo: 'CV', ruta_archivo: rutaCv }],
+        personal_clave: [{ nombre: nombreEspecialista, cargo: cargoEspecialista, experiencia: experienciaEspecialista }]
+      };
+      const ofertaRegistrada = await ofertasService.presentarOferta(payload);
+      setMisOfertas((current) => [ofertaRegistrada, ...current]);
       setSuccess(`¡Propuesta enviada con éxito para el proceso ${procesoSeleccionado.codigo}! 🚀`);
       setProcesoSeleccionado(null);
-      setRutaTecnica(''); setRutaEconomica(''); setRutaCv('');
+      setArchivoTecnico(null); setArchivoEconomico(null); setArchivoCv(null);
       setNombreEspecialista(''); setCargoEspecialista(''); setExperienciaEspecialista('');
       setProcesos(await cargarConvocatorias());
     } catch (err) {
@@ -115,6 +148,7 @@ export default function UserDashboard() {
 
       {error && <div style={styles.errorAlert}><strong>⚠️ Alerta:</strong> {error}</div>}
       {success && <div style={styles.successAlert}><strong>✅ Éxito:</strong> {success}</div>}
+      <AssistantChat />
       {!perfilCargado && (
         <div style={styles.card}>Cargando perfil...</div>
       )}
@@ -154,9 +188,62 @@ export default function UserDashboard() {
           </form>
         </div>
       )}
+      {perfilCargado && perfilPostulante && (
+        <section style={styles.card}>
+          <h3 style={styles.cardTitle}>Perfil de postulante guardado</h3>
+          <p><strong>Razón social:</strong> {perfilPostulante.razon_social}</p>
+          <p><strong>RUC:</strong> {perfilPostulante.ruc}</p>
+          <p><strong>Correo:</strong> {perfilPostulante.correo}</p>
+        </section>
+      )}
+      {perfilCargado && perfilPostulante && (
+        <section style={styles.card}>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px'}}>
+            <h3 style={styles.cardTitle}>Mis postulaciones</h3>
+            <button type="button" onClick={() => cargarMisOfertas().catch((requestError) => setError(requestError.response?.data?.detail || 'No se pudieron actualizar tus postulaciones.'))} style={styles.tableBtn}>Actualizar</button>
+          </div>
+          {!ofertasCargadas ? <p style={styles.subtitle}>Cargando postulaciones...</p> : misOfertas.length === 0 ? (
+            <p style={styles.subtitle}>Todavía no has presentado ofertas. Las postulaciones enviadas aparecerán aquí aunque el análisis con IA no esté configurado.</p>
+          ) : (
+            <div style={{overflowX: 'auto'}}>
+              <table style={styles.table}>
+                <thead>
+                  <tr style={styles.thRow}>
+                    <th style={styles.th}>Proceso</th>
+                    <th style={styles.th}>Fecha de envío</th>
+                    <th style={styles.th}>Estado</th>
+                    <th style={styles.th}>Documentos registrados</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {misOfertas.map((oferta) => (
+                    <tr key={oferta.id} style={styles.tr}>
+                      <td style={styles.td}>
+                        <strong>{oferta.proceso.codigo}</strong>
+                        <div>{oferta.proceso.titulo}</div>
+                        <small>Oferta #{oferta.id}</small>
+                      </td>
+                      <td style={styles.td}>{new Date(oferta.fecha_presentacion).toLocaleString()}</td>
+                      <td style={styles.td}>{oferta.estado}</td>
+                      <td style={styles.td}>
+                        {[...oferta.propuestas, ...oferta.documentos].map((documento) => (
+                          <div key={`${documento.tipo}-${documento.id}`}>{documento.tipo} ✓</div>
+                        ))}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
       {perfilPostulante && (!procesoSeleccionado ? (
         <div style={styles.card}>
-          <h3 style={styles.cardTitle}>Convocatorias Públicas Disponibles</h3>
+          <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px'}}>
+            <h3 style={styles.cardTitle}>Convocatorias públicas vigentes</h3>
+            <button type="button" onClick={() => cargarConvocatorias().then(setProcesos).catch(() => setError('No se pudieron actualizar los procesos. Comprueba que el backend esté activo.'))} style={styles.tableBtn}>Actualizar</button>
+          </div>
           <div style={{overflowX: 'auto'}}>
             <table style={styles.table}>
               <thead>
@@ -198,18 +285,18 @@ export default function UserDashboard() {
           <form onSubmit={handleEnviarPostulacion} style={{display: 'flex', flexDirection: 'column', gap: '16px'}}>
             <div style={styles.rowGrid}>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Ruta Propuesta Técnica (PDF)</label>
-                <input type="text" placeholder="Ej: /archivos/tecnica.pdf" required value={rutaTecnica} onChange={e => setRutaTecnica(e.target.value)} style={styles.input} />
+                <label style={styles.label}>Propuesta Técnica (PDF, máximo 15 MB)</label>
+                <input type="file" accept="application/pdf,.pdf" required onChange={e => setArchivoTecnico(e.target.files?.[0] || null)} style={styles.input} />
               </div>
               <div style={styles.formGroup}>
-                <label style={styles.label}>Ruta Propuesta Económica (PDF)</label>
-                <input type="text" placeholder="Ej: /archivos/economica.pdf" required value={rutaEconomica} onChange={e => setRutaEconomica(e.target.value)} style={styles.input} />
+                <label style={styles.label}>Propuesta Económica (PDF, máximo 15 MB)</label>
+                <input type="file" accept="application/pdf,.pdf" required onChange={e => setArchivoEconomico(e.target.files?.[0] || null)} style={styles.input} />
               </div>
             </div>
 
             <div style={styles.formGroup}>
-              <label style={styles.label}>Ruta del Currículum Vitae (CV)</label>
-              <input type="text" placeholder="Ej: /archivos/cv-empresa.pdf" required value={rutaCv} onChange={e => setRutaCv(e.target.value)} style={styles.input} />
+              <label style={styles.label}>Currículum Vitae (PDF, máximo 15 MB)</label>
+              <input type="file" accept="application/pdf,.pdf" required onChange={e => setArchivoCv(e.target.files?.[0] || null)} style={styles.input} />
             </div>
 
             <div style={styles.innerBox}>

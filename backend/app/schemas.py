@@ -1,6 +1,6 @@
 
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, model_validator
 from datetime import datetime
 from typing import Optional, List, Literal
 
@@ -56,6 +56,51 @@ class EvaluacionResponse(BaseModel):
     }
 
 
+class HallazgoAnalisisIA(BaseModel):
+    requisito: str
+    estado: Literal["cumple", "no_cumple", "no_encontrado", "inconcluso"]
+    evidencia: str
+    documento: str
+
+
+class ResultadoAnalisisIA(BaseModel):
+    resumen: str
+    estado_general: Literal["cumple", "cumple_parcialmente", "no_cumple", "inconcluso"]
+    hallazgos: List[HallazgoAnalisisIA]
+    recomendaciones: List[str]
+
+
+class AnalisisIAResponse(BaseModel):
+    id: int
+    oferta_id: int
+    evaluador_id: int
+    modelo: str
+    resultado: ResultadoAnalisisIA
+    fecha_analisis: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
+
+class PreguntaAsistente(BaseModel):
+    proceso_id: int
+    pregunta: str = Field(..., min_length=3, max_length=2000)
+
+
+class CitaAsistente(BaseModel):
+    documento: str
+    tipo_documento: str
+    pagina: int
+    oferta_id: Optional[int] = None
+
+
+class RespuestaAsistente(BaseModel):
+    respuesta: str
+    citas: List[CitaAsistente]
+    modelo: str
+
+
 # =====================================================================
 # 2. ESQUEMAS NUEVOS - PROCESOS DE SELECCIÓN (SEMANA 2)
 # =====================================================================
@@ -101,8 +146,15 @@ class ProcesoSeleccionBase(BaseModel):
     fecha_cierre: datetime
 
 class ProcesoSeleccionCreate(ProcesoSeleccionBase):
-    entidad_id: int
+    entidad_id: Optional[int] = None
+    entidad: Optional[EntidadContratanteCreate] = None
     tdr: TDRCreate  # Inyección 1:1 nativa para adjuntar el TDR directo al proceso
+
+    @model_validator(mode="after")
+    def validar_entidad(self):
+        if (self.entidad_id is None) == (self.entidad is None):
+            raise ValueError("Debes indicar entidad_id existente o los datos de una nueva entidad.")
+        return self
 
 class ProcesoSeleccionResponse(ProcesoSeleccionBase):
     id: int
@@ -180,16 +232,29 @@ class PerfilPostulanteResponse(BaseModel):
         "from_attributes": True
     }
 
+class ProcesoOfertaResponse(BaseModel):
+    id: int
+    codigo: str
+    titulo: str
+    fecha_cierre: datetime
+
+    model_config = {
+        "from_attributes": True
+    }
+
 class OfertaResponse(BaseModel):
     id: int
     proceso_id: int
     postulante_id: int
+    postulante: PerfilPostulanteResponse
+    proceso: ProcesoOfertaResponse
     estado: str
     fecha_presentacion: datetime
     propuestas: List[PropuestaResponse] = []
     documentos: List[DocumentoResponse] = []
     personal_clave: List[PersonalClaveResponse] = []
     evaluaciones: List[EvaluacionResponse] = []
+    analisis_ia: List[AnalisisIAResponse] = []
 
     model_config = {
         "from_attributes": True

@@ -13,7 +13,7 @@ export const procesosService = {
    * Obtiene todas las convocatorias públicas vigentes en el sistema.
    */
   listarProcesos: async () => {
-    const response = await axios.get(`${API_URL}/procesos`, {
+    const response = await axios.get(`${API_URL}/procesos/`, {
       headers: getAuthHeaders()
     });
     return response.data;
@@ -28,12 +28,28 @@ export const procesosService = {
       headers: getAuthHeaders()
     });
     return response.data;
+  },
+
+  subirTdr: async (archivo) => {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    const response = await axios.post(`${API_URL}/archivos/tdr`, formData, {
+      headers: getAuthHeaders()
+    });
+    return response.data.storage_key;
   }
 };
 
 export const ofertasService = {
   listarOfertas: async () => {
     const response = await axios.get(`${API_URL}/ofertas/`, {
+      headers: getAuthHeaders()
+    });
+    return response.data;
+  },
+
+  listarMisOfertas: async () => {
+    const response = await axios.get(`${API_URL}/ofertas/mis`, {
       headers: getAuthHeaders()
     });
     return response.data;
@@ -55,6 +71,22 @@ export const ofertasService = {
       headers: getAuthHeaders()
     });
     return response.data;
+  },
+
+  subirDocumento: async (archivo) => {
+    const formData = new FormData();
+    formData.append('archivo', archivo);
+    const response = await axios.post(`${API_URL}/archivos/ofertas`, formData, {
+      headers: getAuthHeaders()
+    });
+    return response.data.storage_key;
+  },
+
+  analizarOferta: async (ofertaId) => {
+    const response = await axios.post(`${API_URL}/ofertas/${ofertaId}/analisis-ia`, {}, {
+      headers: getAuthHeaders()
+    });
+    return response.data;
   }
 };
 
@@ -68,6 +100,18 @@ export const postulantesService = {
 
   guardarMiPerfil: async (perfilData) => {
     const response = await axios.put(`${API_URL}/postulantes/me`, perfilData, {
+      headers: getAuthHeaders()
+    });
+    return response.data;
+  }
+};
+
+export const assistantService = {
+  preguntar: async (procesoId, pregunta) => {
+    const response = await axios.post(`${API_URL}/asistente/preguntar`, {
+      proceso_id: procesoId,
+      pregunta
+    }, {
       headers: getAuthHeaders()
     });
     return response.data;

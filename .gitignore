@@ -39,6 +39,7 @@ application-local.yaml
 # DATABASE
 # =========================
 *.db
+backend/data/
 
 # =========================
 # IDEs
